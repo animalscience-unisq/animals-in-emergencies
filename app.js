@@ -1,8 +1,8 @@
 // ─── APP STATE ───────────────────────────────────────────────────────────────
 const state = {
-  role: 'public',       // public | professional | farmer
-  hazard: null,         // bushfire | flood | heatwave | drought | storm | vehicle | entanglement | general
-  animalCategory: null, // nativeMammal | bat | bird | reptile | marine | cattle | horse | sheep | pig | poultry | domestic | feral
+  role: 'public',
+  hazard: null,
+  animalCategory: null,
   animalSubtype: null,
   condition: null,
   history: []
@@ -35,7 +35,6 @@ const PROGRESS = {
   contacts: 90
 };
 
-// ─── ICON COLOUR MAP ─────────────────────────────────────────────────────────
 const ICON_CLASS = {
   green: 'icon-green', amber: 'icon-amber', red: 'icon-red',
   blue: 'icon-blue', teal: 'icon-teal', gray: 'icon-gray'
@@ -44,30 +43,22 @@ const ICON_CLASS = {
 // ─── RENDER HELPERS ──────────────────────────────────────────────────────────
 
 function alertIconName(type) {
-  return {
-    danger: 'ti-alert-circle', warning: 'ti-alert-triangle',
-    info: 'ti-info-circle', success: 'ti-circle-check'
-  }[type] || 'ti-info-circle';
+  return { danger: 'ti-alert-circle', warning: 'ti-alert-triangle', info: 'ti-info-circle', success: 'ti-circle-check' }[type] || 'ti-info-circle';
 }
 
 function alertHTML(a) {
   if (!a) return '';
-  return `
-    <div class="alert alert-${a.type}" role="alert">
-      <i class="ti ${alertIconName(a.type)} alert-icon" aria-hidden="true"></i>
-      <div>
-        ${a.heading ? `<h3>${a.heading}</h3>` : ''}
-        <p>${a.body}</p>
-      </div>
-    </div>`;
+  return `<div class="alert alert-${a.type}" role="alert">
+    <i class="ti ${alertIconName(a.type)} alert-icon" aria-hidden="true"></i>
+    <div>${a.heading ? `<h3>${a.heading}</h3>` : ''}<p>${a.body}</p></div>
+  </div>`;
 }
 
 function stepsHTML(steps) {
   if (!steps || !steps.length) return '';
   let n = 0;
   const items = steps.map(s => {
-    const isPro = s.startsWith('[PROFESSIONAL]');
-    if (isPro && state.role === 'public') return '';
+    if (s.startsWith('[PROFESSIONAL]') && state.role === 'public') return '';
     const text = s.replace('[PROFESSIONAL] ', '');
     n++;
     return `<li><div class="step-num">${n}</div><div class="step-text">${text}</div></li>`;
@@ -102,13 +93,13 @@ function renderScreen(id) {
   if (!node) { console.error('Unknown screen:', id); return; }
 
   const progress = PROGRESS[id] || 0;
-  const showBack  = id !== 'welcome';
-  const showProg  = id !== 'welcome';
+  const showBack = id !== 'welcome';
+  const showProg = id !== 'welcome';
 
   let html = '';
 
   if (showProg) {
-    html += `<div class="progress-track" role="progressbar" aria-valuenow="${progress}" aria-valuemin="0" aria-valuemax="100" aria-label="Progress: ${progress}%">
+    html += `<div class="progress-track" role="progressbar" aria-valuenow="${progress}" aria-valuemin="0" aria-valuemax="100">
       <div class="progress-fill" style="width:${progress}%"></div>
     </div>`;
   }
@@ -118,12 +109,14 @@ function renderScreen(id) {
       <button class="btn-back" onclick="goBack()" aria-label="Go back">
         <i class="ti ti-arrow-left" aria-hidden="true"></i> Back
       </button>
+      <button class="btn-home" onclick="confirmHome()" aria-label="Go to home screen" title="Home">
+        <i class="ti ti-home" aria-hidden="true"></i> Home
+      </button>
     </div>`;
   }
 
   html += phaseBadgeHTML(node);
 
-  // ── Welcome ──
   if (id === 'welcome') {
     html += `
       <div class="welcome-icon" aria-hidden="true"><i class="ti ti-first-aid-kit"></i></div>
@@ -132,12 +125,8 @@ function renderScreen(id) {
       ${alertHTML(node.warning)}
       <div class="section-label">${node.question}</div>
       <div class="btn-grid">${choicesHTML(node.choices)}</div>`;
-
-  // ── Contacts ──
   } else if (id === 'contacts') {
     html += renderContactsScreen(node);
-
-  // ── Standard ──
   } else {
     html += `<h2>${node.title}</h2>`;
     if (node.subtitle) html += `<p class="subtitle">${node.subtitle}</p>`;
@@ -152,18 +141,23 @@ function renderScreen(id) {
   }
 
   if (id === 'contacts') {
-    html += `
-      <div class="disclaimer">
-        This tool provides general first-response guidance only. It does not replace veterinary advice or professional training.
-        Contact details are provided in good faith and may change — verify before relying on them in an emergency.
-      </div>
-      <button class="btn-restart" onclick="restart()">
-        <i class="ti ti-refresh" aria-hidden="true"></i> Start over
-      </button>`;
+    html += `<div class="disclaimer">
+      This tool provides general first-response guidance only. It does not replace veterinary advice or professional training.
+      Contact details are provided in good faith and may change — verify before relying on them in an emergency.
+    </div>
+    <button class="btn-restart" onclick="confirmRestart()">
+      <i class="ti ti-refresh" aria-hidden="true"></i> Start over
+    </button>`;
   }
 
   document.getElementById('screen-content').innerHTML = html;
   window.scrollTo({ top: 0, behavior: 'smooth' });
+
+  // Log step to notes
+  if (typeof Notes !== 'undefined') {
+    Notes.logStep(id, node.title || node.phase || id);
+    Notes.syncAppState(state);
+  }
 
   if (id === 'contacts') {
     setTimeout(() => {
@@ -176,19 +170,21 @@ function renderScreen(id) {
 // ─── CONTACTS SCREEN ─────────────────────────────────────────────────────────
 
 function renderContactsScreen(node) {
-  // Show hazard-specific callout if relevant
   let hazardNote = '';
   if (state.hazard === 'bushfire') {
-    hazardNote = alertHTML({ type: 'danger', heading: 'Bushfire emergency', body: 'For active fire: call 000. For post-fire animal welfare: contact your state agriculture department or wildlife authority.' });
+    hazardNote = alertHTML({ type: 'danger', heading: 'Bushfire emergency', body: 'For active fire: call 000. Post-fire animal welfare: contact your state agriculture department or wildlife authority.' });
   } else if (state.hazard === 'flood') {
     hazardNote = alertHTML({ type: 'danger', heading: 'Flood emergency', body: 'For large animal flood rescue: call SES on 132 500. They coordinate boats and large animal rescue equipment.' });
   } else if (state.hazard === 'drought') {
     hazardNote = alertHTML({ type: 'warning', heading: 'Drought assistance', body: 'Contact your state agriculture department for emergency drought support, hay assistance, and welfare programs.' });
   }
 
+  const notesPrompt = (typeof Notes !== 'undefined') ? Notes.renderContactsPrompt() : '';
+
   return `<h2>${node.title}</h2>
     <p class="subtitle">Enter your postcode to show services in your area.</p>
     ${hazardNote}
+    ${notesPrompt}
     <div class="postcode-row">
       <input type="text" id="postcode-input" placeholder="e.g. 4350" maxlength="4"
         inputmode="numeric" pattern="[0-9]{4}" autocomplete="postal-code"
@@ -205,36 +201,30 @@ function contactCardHTML(c) {
   const cls = c.urgent ? ' urgent' : '';
   let actions = '';
   if (c.phone) actions += `<a href="tel:${c.phone.replace(/\s/g,'')}" aria-label="Call ${c.name}"><i class="ti ti-phone" aria-hidden="true"></i> ${c.phone}</a>`;
-  if (c.url)   actions += `<a href="${c.url}" target="_blank" rel="noopener noreferrer" aria-label="${c.name} website"><i class="ti ti-external-link" aria-hidden="true"></i> Website</a>`;
-  return `
-    <div class="contact-card${cls}">
-      <div class="contact-name">${c.name}</div>
-      <div class="contact-desc">${c.desc}</div>
-      ${actions ? `<div class="contact-actions">${actions}</div>` : ''}
-    </div>`;
+  if (c.url)   actions += `<a href="${c.url}" target="_blank" rel="noopener noreferrer"><i class="ti ti-external-link" aria-hidden="true"></i> Website</a>`;
+  return `<div class="contact-card${cls}">
+    <div class="contact-name">${c.name}</div>
+    <div class="contact-desc">${c.desc}</div>
+    ${actions ? `<div class="contact-actions">${actions}</div>` : ''}
+  </div>`;
 }
 
 function lookupContacts() {
   const pc = (document.getElementById('postcode-input').value || '').trim();
   const el = document.getElementById('contact-results');
-
   if (!/^\d{4}$/.test(pc)) {
     el.innerHTML = `<div class="alert alert-warning" role="alert">
       <i class="ti ti-alert-triangle alert-icon" aria-hidden="true"></i>
-      <p>Please enter a valid 4-digit Australian postcode.</p>
-    </div>`;
+      <p>Please enter a valid 4-digit Australian postcode.</p></div>`;
     return;
   }
-
   const stateCode = postcodeToState(pc);
   if (!stateCode) {
     el.innerHTML = `<div class="alert alert-warning" role="alert">
       <i class="ti ti-alert-triangle alert-icon" aria-hidden="true"></i>
-      <p>Postcode not recognised. Use the national contacts below or try the WIRES rescuer finder.</p>
-    </div>`;
+      <p>Postcode not recognised. Use the national contacts below or try the WIRES rescuer finder.</p></div>`;
     return;
   }
-
   const contacts = STATE_CONTACTS[stateCode] || [];
   let html = `<div class="section-label">Services near postcode ${pc} (${stateCode})</div>`;
   contacts.forEach(c => { html += contactCardHTML(c); });
@@ -246,46 +236,62 @@ function lookupContacts() {
 
 function choose(nextId, value) {
   const current = state.history[state.history.length - 1] || 'welcome';
-
-  // Track state values
-  if (current === 'welcome')        state.role          = value || state.role;
-  if (current === 'hazardType')     state.hazard        = value || state.hazard;
-  if (current === 'animalCategory') state.animalCategory = value || state.animalCategory;
-  if (current === 'nativeMammalType') state.animalSubtype = value || state.animalSubtype;
-  if (current === 'reptileType')    state.animalSubtype = value || state.animalSubtype;
-  if (current === 'condition')      state.condition     = value || state.condition;
-
+  if (current === 'welcome')          state.role           = value || state.role;
+  if (current === 'hazardType')       state.hazard         = value || state.hazard;
+  if (current === 'animalCategory')   state.animalCategory = value || state.animalCategory;
+  if (current === 'nativeMammalType') state.animalSubtype  = value || state.animalSubtype;
+  if (current === 'reptileType')      state.animalSubtype  = value || state.animalSubtype;
+  if (current === 'condition')        state.condition      = value || state.condition;
   goto(nextId);
 }
 
 function goto(id) {
-  if (state.history[state.history.length - 1] !== id) {
-    state.history.push(id);
-  }
+  if (state.history[state.history.length - 1] !== id) state.history.push(id);
   renderScreen(id);
 }
 
 function goBack() {
   if (state.history.length <= 1) return;
   state.history.pop();
-  const prev = state.history[state.history.length - 1] || 'welcome';
-  renderScreen(prev);
+  renderScreen(state.history[state.history.length - 1] || 'welcome');
 }
 
-function restart() {
+function confirmHome() {
+  if (state.history.length > 1) {
+    if (!confirm('Return to the home screen? Your current progress will be lost, but saved notes will be kept.')) return;
+  }
+  state.history = [];
   state.role = 'public';
   state.hazard = null;
   state.animalCategory = null;
   state.animalSubtype = null;
   state.condition = null;
-  state.history = [];
   goto('welcome');
 }
 
-// Escape key goes back
+function confirmRestart() {
+  if (!confirm('Start a new incident? Your current progress will be reset. Saved notes will be kept unless you clear them separately.')) return;
+  state.history = [];
+  state.role = 'public';
+  state.hazard = null;
+  state.animalCategory = null;
+  state.animalSubtype = null;
+  state.condition = null;
+  goto('welcome');
+}
+
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') goBack();
+  if (e.key === 'Escape') {
+    if (typeof Notes !== 'undefined') {
+      const panel = document.getElementById('notes-panel');
+      if (panel && panel.classList.contains('open')) { Notes.closePanel(); return; }
+    }
+    goBack();
+  }
 });
 
 // ─── BOOT ────────────────────────────────────────────────────────────────────
-document.addEventListener('DOMContentLoaded', () => goto('welcome'));
+document.addEventListener('DOMContentLoaded', () => {
+  if (typeof Notes !== 'undefined') Notes.init();
+  goto('welcome');
+});
